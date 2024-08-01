@@ -1,0 +1,327 @@
+char ssid[] = "Tahir"; //  Change this to your network SSID (name).
+char pass[] = "tahir1122";    // Change this your network password
+
+//------ MQTT broker settings and topics
+const char* mqtt_server = "mqtt3.thingspeak.com";
+
+
+//-- published settings
+const char* publishTopic ="channels/2379082/publish";   //REPLACE THE NUMBER 114938 WITH YOUR channel ID  
+//const char* publishTopic2 ="channels/2267970/publish";   //REPLACE THE NUMBER 114938 WITH YOUR channel ID   114938 WITH YOUR channel ID  
+
+const unsigned long postingInterval = 600L * 1000L; // Post data every 10 minutes.
+
+
+//------------------------ Variables-----------------------------------
+//-------------------------------------------------------------------------
+#define RL 10  //The value of resistor RL for MQ7 is 10K
+#define RL2 22  //The value of resistor RL for MQ4 is 22K
+#define RL3 10  //The value of resistor RL for MQ135 is 22K
+
+
+float analog_value;   //MQ7 reading
+float analog_value2; //MQ4 reading
+float analog_value3;  //MQ135 reading
+
+float ratio;          //MQ7 Rs/Ro
+float ratio2;         //MQ4 Rs/Ro
+float ratio3;         //MQ135 Rs/Ro
+
+float Rs;             //MQ7 surface resistance
+float Rs2;             //MQ4 surface resistance
+float Rs3;            //Mq135 surface resistance
+
+float VRL;            //Voltage MQ7
+float VRL2;            //Voltage MQ4
+float VRL3;           //Voltage MQ135
+
+#define m -0.67 //Enter calculated Slope for CO
+float b=1.38; //Enter calculated intercept for CO
+
+//#define m2 -0.73 //Enter calculated Slope for H2
+//#define b2 1.35 //Enter calculated intercept for H2
+
+//#define m3 -0.0136 //Enter calculated Slope for Alcohol
+//#define b3 1.05 //Enter calculated intercept for Alcohol
+
+//#define m4 -0.35 //Enter calculated Slope for LPG
+//#define b4 1.25 //Enter calculated intercept for LPG
+
+#define m5 -0.32 //Enter calculated Slope for CH4
+#define b5 0.95 //Enter calculated intercept for CH4
+
+//#define m6 -0.1 //Enter calculated Slope for Smoke
+//#define b6 0.82 //Enter calculated intercept for Smoke
+
+//#define m7 -0.34 //Enter calculated Slope for Ammonia
+//#define b7 0.669 //Enter calculated intercept for Ammonia
+//
+//#define m8 -0.299 //Enter calculated Slope for Toluene
+//#define b8 0.5 //Enter calculated intercept for Toluene
+
+#define m9 -0.459 //Enter calculated Slope for CO2
+#define b9 0.953 //Enter calculated intercept for CO2
+
+//#define m10 -0.322 //Enter calculated Slope for Acetone
+//#define b10 0.53 //Enter calculated intercept for Acetone
+
+
+#define Ro 0.15 //Enter found Ro value for MQ7
+#define Ro2 4.13 //Enter found Ro value for MQ4
+#define Ro3 4.13 //Enter found Ro value for MQ135
+
+#include <WiFi.h>   
+#include <PubSubClient.h>
+#include <WiFiClient.h>
+
+#include "DHT.h"
+#define DHTPIN 16     
+#define DHTTYPE DHT11 
+DHT dht(DHTPIN, DHTTYPE);  // Create the DHT object.
+
+WiFiClient espClient;
+PubSubClient client(espClient);  // Download the library PubSubClient from the arduino library manager
+
+unsigned long lastUploadedTime = 0;
+
+//==========================================
+void setup_wifi() {
+  delay(10);
+  Serial.print("\nConnecting to ");
+  Serial.println(ssid);
+
+ WiFi.mode(WIFI_STA);
+  WiFi.begin(ssid, pass);
+
+  while (WiFi.status() != WL_CONNECTED) {
+    delay(500);
+    Serial.print(".");
+  }
+  randomSeed(micros());
+  Serial.println("\nWiFi connected\nIP address: ");
+  Serial.println(WiFi.localIP());
+}
+
+//=====================================
+void reconnect() {
+  // Loop until we're reconnected
+  while (!client.connected()) {
+    Serial.print("Attempting MQTT connection...");
+      //client.connect("cliend ID", "username","password") Replace with your Thingspeak MQTT Device Credentials
+    if (client.connect("PRcDBh4DIxAVNzU3IwMXLQY", "PRcDBh4DIxAVNzU3IwMXLQY","uxyy3gubrTuwbfyphHFj+NVh")) {  
+      Serial.println("connected");
+     // client.subscribe(subscribeTopicFor_Command_1);   // subscribe the topics here
+      //client.subscribe(command2_topic);   
+      
+    } else {
+      Serial.print("failed, rc=");
+      Serial.print(client.state());
+      Serial.println(" try again in 5 seconds");   // Wait 5 seconds before retrying
+      delay(5000);
+    }
+  }
+
+}
+
+//========================================= messageReceived
+void messageReceived(String &topic, String &payload) {
+ Serial.println("incoming: " + topic + " - " + payload);
+ 
+  //-- check for Virtuino Command 1
+//  if (topic==subscribeTopicFor_Command_1){
+//        Serial.println("Command 1 = "+payload);
+//        int v = payload.toInt();
+//        if (v>0) digitalWrite(LED_BUILTIN,HIGH);
+//        else digitalWrite(LED_BUILTIN,LOW);
+//   }
+
+  /*//-- check for Virtuino Command 1
+  if (topic==subscribeTopicFor_Command_2){
+        Serial.println("Command 2 = "+payload);
+   }
+   */
+  
+}
+
+//========================================= setup
+//=========================================
+
+void callback(char* topic, byte* payload, unsigned int length) {
+  String incommingMessage = "";
+  for (int i = 0; i < length; i++) incommingMessage+=(char)payload[i];
+  
+  Serial.println("Message arrived ["+String(topic)+"]"+incommingMessage);
+  
+  //--- check the incomming message
+//    if( strcmp(topic,subscribeTopicFor_Command_1) == 0){
+//     if (incommingMessage.equals("1")) digitalWrite(LED_BUILTIN, LOW);   // Turn the LED on 
+//     else digitalWrite(LED_BUILTIN, HIGH);  // Turn the LED off 
+//  }
+}
+
+void setup() {
+  pinMode(34,INPUT);
+pinMode(35,INPUT);
+  pinMode(32,INPUT);
+
+  Serial.begin(9600);
+  dht.begin();
+  while (!Serial) delay(1);
+  setup_wifi();
+  client.setServer(mqtt_server, 1883);
+  client.setCallback(callback);
+}
+
+void publishMessage(const char* topic, String payload , boolean retained){
+  if (client.publish(topic, payload.c_str()))
+      Serial.println("Message published ["+String(topic)+"]: "+payload);
+}
+//========================================= loop
+//=========================================
+void loop() {
+
+  delay(2000);
+//
+//  // Reading temperature or humidity takes about 250 milliseconds!
+//  // Sensor readings may also be up to 2 seconds 'old' (its a very slow sensor)
+float h = dht.readHumidity();
+//  //Read temperature as Celsius (the default)
+ float t = dht.readTemperature();
+//
+if (isnan(h) || isnan(t) ) {
+ Serial.println("Failed to read from DHT sensor!");
+  return;
+ }
+ 
+ analog_value=analogRead(34); //Reading the sensor value MQ7
+analog_value2=analogRead(35); //Reading the sensor value MQ4
+ analog_value3=analogRead(32); //Reading the sensor value MQ135
+
+Serial.println(analog_value);
+Serial.println(analog_value2);
+Serial.println(analog_value3);
+
+ 
+  VRL = (5/4095.0)*analog_value; //Convert analog value to voltage
+VRL2 = (5/4095.0)*analog_value2; //Convert analog value to voltage
+  VRL3 = (5/4096.0)*analog_value3; //Convert analog value to voltage
+  
+  Rs = ((5.0/VRL)-1) * RL; //Calculation of Rs
+Rs2 = ((5.0/VRL2)-1) * RL2; //Calculation of Rs
+  Rs3 = ((5.0/VRL3)-1) * RL3; //Calculation of Rs
+  
+  ratio=Rs/Ro;
+ ratio2=Rs2/Ro2;
+  ratio3=Rs3/Ro3;  
+  
+  double CO = pow(10, ((log10(ratio)-b)/m)); //use formula to calculate ppm
+  //double H2 = pow(10, ((log10(ratio)-b2)/m2)); //use formula to calculate ppm
+  //double Alcohol = pow(10, ((log10(ratio)-b3)/m3)); //use formula to calculate ppm
+ // double LPG = pow(10, ((log10(ratio2)-b4)/m4)); //use formula to calculate ppm
+double Methane = pow(10, ((log10(ratio2)-b5)/m5)); //use formula to calculate ppm
+ // double Smoke = pow(10, ((log10(ratio2)-b6)/m6)); //use formula to calculate ppm
+ // double Ammonia = pow(10, ((log10(ratio3)-b7)/m7)); //use formula to calculate ppm
+  //double Toluene = pow(10, ((log10(ratio)-b8)/m8)); //use formula to calculate ppm
+  double CO2 = pow(10, ((log10(ratio3)-b9)/m9)); //use formula to calculate ppm
+  //double Acetone = pow(10, ((log10(ratio)-b10)/m10)); //use formula to calculate ppm
+  
+Serial.print("CO= ");
+Serial.print(CO);
+Serial.println(" ppm"); //Display ppm
+delay(1000);
+
+//Serial.print("H2= ");
+//Serial.print(H2);
+//Serial.println(" ppm"); //Display ppm
+//delay(1000);
+//
+//Serial.print("Alcohol= ");
+//Serial.print(Alcohol);
+//Serial.println(" ppm"); //Display ppm
+//delay(1000);
+//
+//Serial.print("LPG= ");
+//Serial.print(LPG);
+//Serial.println(" ppm"); //Display ppm
+//delay(1000);
+//
+Serial.print("Methane= ");
+Serial.print(Methane);
+Serial.println(" ppm"); //Display ppm
+delay(1000);
+//
+//Serial.print("Smoke= ");
+//Serial.print(Smoke);
+//Serial.println(" ppm"); //Display ppm
+//delay(1000);
+//
+//Serial.print("Ammonia= ");
+//Serial.print(Ammonia);
+//Serial.println(" ppm"); //Display ppm
+//delay(1000);
+
+//Serial.print("Toluene= ");
+//Serial.print(Toluene);
+//Serial.println(" ppm"); //Display ppm
+//delay(1000);
+
+Serial.print("Carbon Dioxide= ");
+Serial.print(CO2);
+Serial.println(" ppm"); //Display ppm
+delay(1000);
+
+//Serial.print("Acetone= ");
+//Serial.print(Acetone);
+//Serial.println(" ppm"); //Display ppm
+//delay(1000);
+
+//Serial.print("Humidity: ");
+//Serial.print(h);
+//Serial.println("%");
+//Serial.print("Temperature: ");
+////Serial.print(t);
+//Serial.println("°C ");
+//delay(1000);
+
+ 
+  if (!client.connected()) reconnect();
+  client.loop();
+    
+  
+  if (millis() - lastUploadedTime > postingInterval) { // The uploading interval must be > 15 seconds 
+    double sensorValue_1 = CO; // replace with your sensor value
+    //double sensorValue_2 = H2; // replace with your sensor value
+    //double sensorValue_3 = Alcohol; // replace with your sensor value
+    //double sensorValue_4 = LPG; // replace with your sensor value
+  double sensorValue_5 = Methane; // replace with your sensor value
+   // double sensorValue_6 = Smoke; // replace with your sensor value
+   // double sensorValue_7 = Ammonia; // replace with your sensor value
+   // double sensorValue_8 = Toluene; // replace with your sensor value
+    double sensorValue_9 = CO2; // replace with your sensor value
+    //double sensorValue_10 = Acetone; // replace with your sensor value
+  double sensorValue_11 = t; // replace with your sensor value
+ double sensorValue_12 = h; // replace with your sensor value
+
+    //int sensorValue_3=random(100);  // if you want to use three sensors enable this line
+
+//    delay()
+  //  delay(600000);
+    String dataText = String("field1=" + String(sensorValue_1)+ "&field2=" + String(sensorValue_9)+ "&field3=" + String(sensorValue_5) + "&field4=" + String(sensorValue_11) + "&field5=" + String(sensorValue_12) + "&status=MQTTPUBLISH");
+    publishMessage(publishTopic,dataText,true);    
+    lastUploadedTime = millis();
+
+//    String dataText2 = String("field1=" + String(sensorValue_7) + "&field3=" + String(sensorValue_9)+ "&field5=" + String(sensorValue_11)+ "&field6=" + String(sensorValue_12)+ "&status=MQTTPUBLISH");
+  //  publishMessage(publishTopic2,dataText2,true);    
+   // lastUploadedTime = millis();
+  }
+  
+ }
+
+ 
+//=======================================  
+// This void is called every time we have a message from the broker
+
+
+
+
+//======================================= publising as string
